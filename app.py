@@ -3,8 +3,33 @@ import requests
 import json
 import pymysql
 import time
+import logging
 
+def setup_logger(log_file='app.log'):
+    # 创建一个记录器
+    logger = logging.getLogger('my_logger')
+    logger.setLevel(logging.DEBUG)
 
+    # 创建一个文件处理程序，用于将日志写入文件
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+
+    # 创建一个控制台处理程序，用于在控制台输出日志
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+
+    # 创建一个格式器，用于定义日志消息的格式
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    # 将处理程序添加到记录器
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    return logger
+
+# 資料庫連線 Function
 def connect_db(host, user, pwd, dbname, port):
     try:
         db = pymysql.connect(
@@ -17,26 +42,22 @@ def connect_db(host, user, pwd, dbname, port):
         # print("連線成功")
         return db
     except Exception as e:
-        print('連線資料庫失敗: {}'.format(str(e)))
+        logger.error('連線資料庫失敗: {}'.format(str(e)))
     return None
 
+
+
+
 def getTyphoon(url, params):
-    response = requests.get(url, params=params)
+    try:
+        response = requests.get(url, params=params)
+    except Exception as e:
+        logger.error(f"無法連線至爬蟲網站: {e}")
     status_code = response.status_code
     if(status_code == 200):
-        data = json.loads(response.text)
-        typhoons = data["records"]["tropicalCyclones"]["tropicalCyclone"]
+        data = json.loads(response.text) # 將回傳值內容轉成 JSON格式
+        typhoons = data["records"]["tropicalCyclones"]["tropicalCyclone"] # 取得颱風列表
 
-        db = connect_db(
-            host='127.0.0.1',
-            user='root',
-            pwd='Ru,6e.4vu4wj/3',
-            dbname="greenhouse",
-            port=3306
-        ) # 資料庫連線
-
-        if( not db ):
-            print("資料庫連線發生問題")
         cursor = db.cursor()
 
         for typhoon in typhoons:
@@ -61,8 +82,9 @@ def getTyphoon(url, params):
             if not name_en and TdNo:
                 name_en = "TD" + TdNo 
 
-            analysisData = typhoon["analysisData"]["fix"] # 颱風實際數據
 
+            #region (實際數據)
+            analysisData = typhoon["analysisData"]["fix"] # 颱風實際數據
             for data in analysisData:
                 print(f"(!實際!){year}年【No{no}.颱風】 {name}({name_en})")
                 fixTime = data["fixTime"] # 定位時間
@@ -116,7 +138,9 @@ def getTyphoon(url, params):
                     ))
                     db.commit()
                 print("-----------------------------")
-
+            #endregion
+            
+            #region (預測數據)
             forecastData = typhoon["forecastData"]["fix"] # 颱風預測數據
             for data in forecastData:
                 print(f"(!預測!) {year}年【No{no}.颱風】 {name}({name_en})")
@@ -181,10 +205,28 @@ def getTyphoon(url, params):
             sql = f"DELETE FROM `typhoon` WHERE `td_no` = '{TdNo}' AND `name` != '{name}';"
             cursor.execute(sql)
             db.commit()
+            #endregion
         db.close()
 
 
 if __name__ == '__main__':
+    # 操作日誌
+    logger = setup_logger()
+
+    #region (資料庫連線狀態)
+    db = connect_db(
+        host='127.0.0.1',
+        user='root',
+        pwd='Ru,6e.4vu4wj/3',
+        dbname="greenhouse",
+        port=3306
+    ) # 資料庫連線
+
+    if( not db ):
+        print("資料庫連線發生問題")
+    #endregion
+
+    #region (API 設定)
     Api_Code = "W-C0034-005" # 更新頻率: 6hr
     url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/{Api_Code}"
     token = "CWB-3B4F6F2F-1E94-4A08-9FD7-EC2742EA45C9", # 會員 TOKEN
@@ -192,11 +234,14 @@ if __name__ == '__main__':
     params = { # Request時使用
         "Authorization": token,
     }
+    #endregion
 
     try:
         getTyphoon(url, params)
+
+        logger.info("執行成功")
     except Exception as e:
-        print(f"發生不明錯誤: {e}")
+        logger.error(f"發生不明錯誤: {e}")
     finally:
         print(f"程式執行結束，3秒後關閉...")
         time.sleep(3)

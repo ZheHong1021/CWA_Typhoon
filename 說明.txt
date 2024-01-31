@@ -1,4 +1,5 @@
-程式抓取的連結： https://e-service.cwb.gov.tw/HistoryDataQuery/index.jsp
+【主題】: 中央氣象局 - 颱風資訊 (W-C0034-005)
+程式抓取的連結： https://opendata.cwb.gov.tw/dist/opendata-swagger.html
 
 【虛擬環境】
 安裝:『pip install virtualenv』
